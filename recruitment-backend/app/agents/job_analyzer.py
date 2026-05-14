@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 AGENT_NAME = "JobAnalyzer"
 MODEL_NAME = "gemini-2.5-flash"
 TEMPERATURE = 0.2
-MAX_OUTPUT_TOKENS = 4096
+MAX_OUTPUT_TOKENS = 8192
 
 
 # ─────────────────────────────────────────────
@@ -64,8 +64,12 @@ def _build_llm() -> ChatGoogleGenerativeAI:
         model=MODEL_NAME,
         temperature=TEMPERATURE,
         max_output_tokens=MAX_OUTPUT_TOKENS,
-        # Désactive le safety filtering agressif pour le contexte RH
         convert_system_message_to_human=False,
+        # Désactive le mode "thinking" de gemini-2.5-flash :
+        # sans ça, response.content est une list[dict] avec des blocs
+        # {"type":"thinking",...} qui cassent le parsing JSON.
+        # budget_tokens=0 force la réponse texte directe.
+        thinking={"thinking_budget": 0},
     )
 
 
@@ -88,41 +92,107 @@ def _parse_llm_response(raw_content: str) -> dict[str, Any]:
     """
     Parse la réponse JSON du LLM de manière sécurisée.
 
-    Stratégie :
-        1. Essai de parsing direct.
-        2. Extraction entre balises ```json ... ``` si présentes.
-        3. Recherche du premier '{' au cas où il y a du texte parasite.
+    Stratégie en cascade (4 niveaux) :
+        1. Parsing direct du contenu brut.
+        2. Extraction via regex depuis un bloc ```json ... ``` ou ``` ... ```.
+           Robuste aux espaces, sauts de ligne et variantes de backticks.
+        3. Extraction accolades : du premier '{' au dernier '}'.
+        4. Échec explicite avec contexte de débogage.
 
     Raises:
         ValueError: Si aucune stratégie ne produit un JSON valide.
     """
+    import re
+
     content = raw_content.strip()
 
-    # Stratégie 1 — parsing direct
+    # Stratégie 1 — parsing direct (cas idéal : le LLM respecte la consigne)
     try:
         return json.loads(content)
     except json.JSONDecodeError:
         pass
 
-    # Stratégie 2 — extraction depuis bloc markdown
-    if "```json" in content:
+    # Stratégie 2 — extraction depuis un bloc markdown (``` ou ```json)
+    # Le pattern capture tout ce qui est entre les deux séries de backticks,
+    # en ignorant le mot-clé optionnel (json, JSON, etc.) et les espaces.
+    fence_pattern = re.compile(
+        r"```(?:json)?\s*\n?(.*?)\n?\s*```",
+        re.DOTALL | re.IGNORECASE,
+    )
+    for match in fence_pattern.finditer(content):
+        candidate = match.group(1).strip()
         try:
-            start = content.index("```json") + 7
-            end = content.index("```", start)
-            return json.loads(content[start:end].strip())
-        except (ValueError, json.JSONDecodeError):
-            pass
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue  # Essaie le prochain bloc si plusieurs sont présents
 
-    # Stratégie 3 — extraction depuis le premier '{'
+    # Stratégie 3 — extraction accolades (texte parasite avant/après le JSON)
     try:
         start = content.index("{")
         end = content.rindex("}") + 1
         return json.loads(content[start:end])
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise ValueError(
-            f"Impossible de parser la réponse JSON du LLM.\n"
-            f"Contenu reçu (100 premiers chars) : {content[:100]}"
-        ) from exc
+    except (ValueError, json.JSONDecodeError):
+        pass
+
+    # Stratégie 4 — échec avec contexte de débogage complet
+    preview = content[:300].replace("\n", "\\n")
+    raise ValueError(
+        f"Impossible de parser la réponse JSON du LLM après 3 tentatives.\n"
+        f"Longueur totale reçue : {len(content)} caractères.\n"
+        f"Aperçu (300 chars) : {preview}"
+    )
+
+
+def _sanitise_llm_data(data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Sanitise le dictionnaire brut retourné par le LLM avant validation Pydantic.
+
+    Problème connu : Gemini retourne parfois `null` (→ None en Python) sur des
+    champs que le prompt définit comme obligatoires (strings, listes).
+    Ce pré-traitement remplace tous les None par des valeurs neutres typées
+    afin d'éviter les ValidationError Pydantic sur les champs non-optionnels.
+    """
+    # Champs string obligatoires → fallback ""
+    str_fields = [
+        "job_title",
+        "ideal_candidate_summary",
+        "contract_type",
+        "work_mode",
+        "experience_level",
+    ]
+    for field in str_fields:
+        if data.get(field) is None:
+            data[field] = ""
+
+    # Champs list → fallback []
+    list_fields = [
+        "technical_skills",
+        "soft_skills",
+        "education_requirements",
+        "key_responsibilities",
+        "rag_keywords",
+    ]
+    for field in list_fields:
+        if not isinstance(data.get(field), list):
+            data[field] = []
+
+    # Champs numériques → fallback None (ils sont Optional dans le modèle)
+    for field in ["years_of_experience_min", "years_of_experience_max"]:
+        val = data.get(field)
+        if val is not None:
+            try:
+                data[field] = int(val)
+            except (TypeError, ValueError):
+                data[field] = None
+
+    # Confiance → float entre 0 et 1
+    try:
+        confidence = float(data.get("analysis_confidence") or 0.75)
+        data["analysis_confidence"] = max(0.0, min(1.0, confidence))
+    except (TypeError, ValueError):
+        data["analysis_confidence"] = 0.75
+
+    return data
 
 
 def _build_job_profile(data: dict[str, Any], raw_filename: str | None) -> JobProfile:
@@ -139,6 +209,9 @@ def _build_job_profile(data: dict[str, Any], raw_filename: str | None) -> JobPro
     Returns:
         JobProfile validé par Pydantic.
     """
+    # ── Sanitisation défensive avant tout traitement ───────────────
+    data = _sanitise_llm_data(data)
+
     # ── Compétences techniques ─────────────────────────────────────
     technical_skills = [
         TechnicalSkill(
@@ -203,9 +276,9 @@ def _build_job_profile(data: dict[str, Any], raw_filename: str | None) -> JobPro
         education_requirements=data.get("education_requirements", []),
         key_responsibilities=data.get("key_responsibilities", []),
         salary_range=salary_range,
-        ideal_candidate_summary=data.get("ideal_candidate_summary", ""),
-        rag_keywords=data.get("rag_keywords", []),
-        analysis_confidence=float(data.get("analysis_confidence", 0.75)),
+        ideal_candidate_summary=data.get("ideal_candidate_summary") or "",
+        rag_keywords=data.get("rag_keywords") or [],
+        analysis_confidence=float(data.get("analysis_confidence") or 0.75),
         analysis_notes=data.get("analysis_notes"),
     )
 
@@ -310,11 +383,52 @@ def job_analyzer_node(state: RecruitmentState) -> dict:
         ]
 
         response = llm.invoke(messages)
-        raw_content: str = response.content
+
+        # ── Extraction robuste du contenu textuel ─────────────────
+        # ChatGoogleGenerativeAI peut retourner :
+        #   - str        : cas normal (modèles standard)
+        #   - list[dict] : gemini-2.5-flash en mode "thinking"
+        #     ex: [{"type":"thinking","thinking":"..."},{"type":"text","text":"..."}]
+        #   - list[str]  : variante rare multi-blocs
+        content_raw = response.content
+        raw_content: str
+
+        if isinstance(content_raw, str):
+            raw_content = content_raw
+
+        elif isinstance(content_raw, list):
+            text_parts = []
+            for block in content_raw:
+                if isinstance(block, dict):
+                    if block.get("type") == "text":
+                        text_parts.append(block.get("text", ""))
+                    elif block.get("type") == "thinking":
+                        pass  # Bloc de réflexion interne — ignoré
+                    elif "text" in block:
+                        text_parts.append(block["text"])
+                elif isinstance(block, str):
+                    text_parts.append(block)
+            raw_content = "\n".join(text_parts).strip()
+            # Fallback si aucun bloc texte trouvé
+            if not raw_content:
+                import json as _json
+
+                raw_content = _json.dumps(content_raw)
+        else:
+            raw_content = str(content_raw)
+
+        # Log DEBUG pour diagnostiquer les futures réponses inattendues
+        logger.debug(
+            f"[{AGENT_NAME}] Contenu brut Gemini "
+            f"(type={type(content_raw).__name__}, "
+            f"len={len(raw_content)}) :\n{raw_content[:500]}"
+        )
 
         log = _log_activity(
             {**state, "activity_log": log},
-            f"Réponse reçue de {MODEL_NAME} " f"({len(raw_content)} caractères).",
+            f"Réponse reçue de {MODEL_NAME} "
+            f"({len(raw_content)} caractères, "
+            f"type brut: {type(content_raw).__name__}).",
         )
 
     except Exception as exc:
