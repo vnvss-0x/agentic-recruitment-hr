@@ -35,7 +35,9 @@ from typing_extensions import TypedDict
 
 from app.models.candidate import CandidateProfile, RawCV
 from app.models.hitl import HRShortlistValidation, ManagerFinalValidation
+from app.models.interview import InterviewQuestionSet, InterviewResponseSet
 from app.models.job import JobProfile, RawJobOffer
+from app.models.report import FinalReport
 
 # ─────────────────────────────────────────────
 # Enum — Étapes du pipeline
@@ -57,11 +59,14 @@ class PipelineStep(str, Enum):
     HITL_1_DONE = "hitl_1_done"
     INTERVIEW_GENERATION = "interview_generation"  # Agent 3
     INTERVIEW_GENERATION_DONE = "interview_generation_done"
+    INTERVIEW_RESPONSES_PENDING = "interview_responses_pending"
+    INTERVIEW_RESPONSES_DONE = "interview_responses_done"
     INTERVIEW_ANALYSIS = "interview_analysis"  # Agent 4
     INTERVIEW_ANALYSIS_DONE = "interview_analysis_done"
     HITL_2_PENDING = "hitl_2_pending"  # Attente validation Manager
     HITL_2_DONE = "hitl_2_done"
     REPORT_GENERATION = "report_generation"  # Agent 5
+    REPORT_GENERATION_DONE = "report_generation_done"
     COMPLETED = "completed"
     ERROR = "error"
 
@@ -170,17 +175,17 @@ class RecruitmentState(TypedDict, total=False):
     """
 
     # ── Sorties Agent 3 — Génération des Entretiens ───────────────
-    interview_questions: Optional[Dict[str, Any]]
+    interview_questions: Optional[Dict[str, InterviewQuestionSet]]
     """
     Questions d'entretien générées par l'Agent 3.
     Structure : {candidate_id: {"technical": [...], "behavioral": [...], "situational": [...]}}
     """
 
-    interview_responses: Optional[Dict[str, Any]]
+    interview_responses: Optional[Dict[str, InterviewResponseSet]]
     """
-    Réponses des candidats aux questions d'entretien.
+    Reponses des candidats aux questions d'entretien.
     Fournies par l'utilisateur via l'interface web.
-    Structure : {candidate_id: {question_id: answer_text}}
+    Structure : {candidate_id: InterviewResponseSet}
     """
 
     # ── Sorties Agent 4 — Analyse des Entretiens ──────────────────
@@ -211,17 +216,10 @@ class RecruitmentState(TypedDict, total=False):
     """
 
     # ── Sorties Agent 5 — Rapport Final ───────────────────────────
-    final_report: Optional[Dict[str, Any]]
+    final_report: Optional[FinalReport]
     """
-    Rapport RH complet consolidé par l'Agent 5.
-    Structure : {
-        "executive_summary": str,
-        "selected_candidate": CandidateProfile,
-        "ranking_table": [...],
-        "process_timeline": [...],
-        "recommendations": str,
-        "generated_at": str
-    }
+    Rapport RH complet consolide par l'Agent 5.
+    Structure basee sur le modele FinalReport.
     """
 
     # ── Évaluation des Prompts ────────────────────────────────────

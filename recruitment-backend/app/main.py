@@ -35,6 +35,15 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # ── Imports internes ───────────────────────────────────────────────
+from app.api.websocket import (
+    WSCompleteMessage,
+    WSConnectedMessage,
+    WSErrorMessage,
+    WSLogMessage,
+    WSPongMessage,
+    WSSubscribedMessage,
+    WSStepUpdateMessage,
+)
 from app.core.config import settings
 from app.graph.state import PipelineStep, RecruitmentState, create_initial_state
 from app.graph.workflow import recruitment_graph
@@ -97,15 +106,10 @@ class WebSocketManager:
 
     async def broadcast_log(self, session_id: str, message: str) -> None:
         """Raccourci pour envoyer un message de log au frontend."""
-        await self.send(
-            session_id,
-            {
-                "type": "log",
-                "session_id": session_id,
-                "message": message,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
+        payload = WSLogMessage(session_id=session_id, message=message).model_dump(
+            mode="json"
         )
+        await self.send(session_id, payload)
 
     async def broadcast_step(
         self,
@@ -114,28 +118,19 @@ class WebSocketManager:
         data: dict[str, Any] | None = None,
     ) -> None:
         """Notifie le frontend d'un changement d'étape du pipeline."""
-        await self.send(
-            session_id,
-            {
-                "type": "step_update",
-                "session_id": session_id,
-                "step": step.value,
-                "data": data or {},
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-        )
+        payload = WSStepUpdateMessage(
+            session_id=session_id,
+            step=step,
+            data=data or {},
+        ).model_dump(mode="json")
+        await self.send(session_id, payload)
 
     async def broadcast_error(self, session_id: str, message: str) -> None:
         """Notifie le frontend d'une erreur critique."""
-        await self.send(
-            session_id,
-            {
-                "type": "error",
-                "session_id": session_id,
-                "message": message,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
+        payload = WSErrorMessage(session_id=session_id, message=message).model_dump(
+            mode="json"
         )
+        await self.send(session_id, payload)
 
     async def broadcast_complete(
         self,
@@ -143,15 +138,10 @@ class WebSocketManager:
         result: dict[str, Any],
     ) -> None:
         """Notifie le frontend que le pipeline (ou l'étape) est terminé."""
-        await self.send(
-            session_id,
-            {
-                "type": "complete",
-                "session_id": session_id,
-                "result": result,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
+        payload = WSCompleteMessage(session_id=session_id, result=result).model_dump(
+            mode="json"
         )
+        await self.send(session_id, payload)
 
     @property
     def active_count(self) -> int:
@@ -526,18 +516,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
     await ws_manager.connect(session_id, websocket)
 
     # Message de bienvenue
-    await ws_manager.send(
-        session_id,
-        {
-            "type": "connected",
-            "session_id": session_id,
-            "message": (
-                f"Connecté à la session de recrutement {session_id}. "
-                "En attente des événements du pipeline..."
-            ),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        },
-    )
+    connected_payload = WSConnectedMessage(
+        session_id=session_id,
+        message=(
+            f"Connecte a la session de recrutement {session_id}. "
+            "En attente des evenements du pipeline..."
+        ),
+    ).model_dump(mode="json")
+    await ws_manager.send(session_id, connected_payload)
 
     try:
         # Boucle de réception — maintient la connexion ouverte
@@ -547,25 +533,18 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
 
             if msg_type == "ping":
                 # Keepalive — répond avec pong
-                await ws_manager.send(
-                    session_id,
-                    {
-                        "type": "pong",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    },
+                pong_payload = WSPongMessage(session_id=session_id).model_dump(
+                    mode="json"
                 )
+                await ws_manager.send(session_id, pong_payload)
 
             elif msg_type == "subscribe":
                 # Le client confirme son abonnement à une session
                 logger.info(f"[WS] Client abonné à la session {session_id}")
-                await ws_manager.send(
-                    session_id,
-                    {
-                        "type": "subscribed",
-                        "session_id": session_id,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    },
-                )
+                subscribed_payload = WSSubscribedMessage(
+                    session_id=session_id
+                ).model_dump(mode="json")
+                await ws_manager.send(session_id, subscribed_payload)
 
             else:
                 logger.debug(
