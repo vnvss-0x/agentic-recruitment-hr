@@ -49,7 +49,12 @@ import logging
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from app.agents.cv_screener import cv_screener_node
+from app.agents.interview_analyzer import interview_analyzer_node
+from app.agents.interview_generator import interview_generator_node
 from app.agents.job_analyzer import job_analyzer_node
+from app.agents.report_generator import report_generator_node
+from app.graph.hitl_manager import hitl_hr_node, hitl_manager_node
 from app.graph.state import PipelineStep, RecruitmentState
 
 logger = logging.getLogger(__name__)
@@ -67,33 +72,6 @@ NODE_INTERVIEW_GENERATOR = "interview_generator"  # Agent 3  [TODO]
 NODE_INTERVIEW_ANALYZER = "interview_analyzer"  # Agent 4  [TODO]
 NODE_HITL_MANAGER = "hitl_manager_validation"  # HITL 2   [TODO]
 NODE_REPORT_GENERATOR = "report_generator"  # Agent 5  [TODO]
-
-
-# ─────────────────────────────────────────────
-# Placeholders — Nœuds non encore implémentés
-# ─────────────────────────────────────────────
-# Ces fonctions seront remplacées fichier par fichier au fur et à mesure.
-# Elles permettent de compiler et tester le graphe dès maintenant.
-
-
-def _placeholder_node(node_name: str):
-    """
-    Fabrique un nœud placeholder qui logue son appel
-    et passe le state sans modification.
-    """
-
-    def _node(state: RecruitmentState) -> dict:
-        logger.info(
-            f"[PLACEHOLDER] Nœud '{node_name}' appelé — " "implémentation à venir."
-        )
-        existing_log = state.get("activity_log") or []
-        return {
-            "activity_log": existing_log
-            + [f"[PLACEHOLDER] {node_name} — non encore implémenté."]
-        }
-
-    _node.__name__ = node_name
-    return _node
 
 
 # ─────────────────────────────────────────────
@@ -131,13 +109,14 @@ def route_after_hitl_hr(state: RecruitmentState) -> str:
         "reanalyze"  si une réanalyse des CVs est demandée.
         "continue"   pour passer à la génération d'entretiens.
     """
-    # [TODO] Implémenter la logique réelle avec hr_validation.status
-    # Actuellement : toujours continuer (comportement placeholder)
     hr_validation = state.get("hr_validation")
     if hr_validation:
         from app.models.hitl import HITLStatus
 
-        if hr_validation.status == HITLStatus.REANALYSIS_REQUESTED:
+        if hr_validation.status in (
+            HITLStatus.REANALYSIS_REQUESTED,
+            HITLStatus.REJECTED,
+        ):
             logger.info("[Workflow] RH demande une réanalyse des CVs.")
             return "reanalyze"
     return "continue"
@@ -155,10 +134,14 @@ def route_after_hitl_manager(state: RecruitmentState) -> str:
     Returns:
         "hire" | "additional_interview" | "cancel"
     """
-    # [TODO] Implémenter la logique réelle avec manager_validation.decision
     manager_validation = state.get("manager_validation")
     if manager_validation:
         from app.models.hitl import ManagerDecision
+        from app.models.hitl import HITLStatus
+
+        if manager_validation.status == HITLStatus.REJECTED:
+            logger.info("[Workflow] Manager rejette le processus.")
+            return "cancel"
 
         decision = manager_validation.decision
         if decision == ManagerDecision.ADDITIONAL_INTERVIEW:
@@ -200,25 +183,23 @@ def build_recruitment_graph() -> StateGraph:
     # ✅ Agent 1 — Implémenté
     graph.add_node(NODE_JOB_ANALYZER, job_analyzer_node)
 
-    # 🔲 Agent 2 — Placeholder (sera remplacé par cv_screener_node)
-    graph.add_node(NODE_CV_SCREENER, _placeholder_node(NODE_CV_SCREENER))
+    # ✅ Agent 2
+    graph.add_node(NODE_CV_SCREENER, cv_screener_node)
 
-    # 🔲 HITL 1 — Placeholder (sera remplacé par hitl_hr_node avec interrupt)
-    graph.add_node(NODE_HITL_HR, _placeholder_node(NODE_HITL_HR))
+    # ✅ HITL 1
+    graph.add_node(NODE_HITL_HR, hitl_hr_node)
 
-    # 🔲 Agent 3 — Placeholder (sera remplacé par interview_generator_node)
-    graph.add_node(
-        NODE_INTERVIEW_GENERATOR, _placeholder_node(NODE_INTERVIEW_GENERATOR)
-    )
+    # ✅ Agent 3
+    graph.add_node(NODE_INTERVIEW_GENERATOR, interview_generator_node)
 
-    # 🔲 Agent 4 — Placeholder (sera remplacé par interview_analyzer_node)
-    graph.add_node(NODE_INTERVIEW_ANALYZER, _placeholder_node(NODE_INTERVIEW_ANALYZER))
+    # ✅ Agent 4
+    graph.add_node(NODE_INTERVIEW_ANALYZER, interview_analyzer_node)
 
-    # 🔲 HITL 2 — Placeholder (sera remplacé par hitl_manager_node avec interrupt)
-    graph.add_node(NODE_HITL_MANAGER, _placeholder_node(NODE_HITL_MANAGER))
+    # ✅ HITL 2
+    graph.add_node(NODE_HITL_MANAGER, hitl_manager_node)
 
-    # 🔲 Agent 5 — Placeholder (sera remplacé par report_generator_node)
-    graph.add_node(NODE_REPORT_GENERATOR, _placeholder_node(NODE_REPORT_GENERATOR))
+    # ✅ Agent 5
+    graph.add_node(NODE_REPORT_GENERATOR, report_generator_node)
 
     # ─────────────────────────────────────────────────────────────
     # EDGES SÉQUENTIELS
@@ -303,8 +284,7 @@ def build_recruitment_graph() -> StateGraph:
         checkpointer=checkpointer,
         # Points d'interruption HITL — le graphe se suspend ici
         # et attend une reprise explicite via graph.invoke(None, config).
-        # [TODO] Décommenter quand les nœuds HITL réels seront branchés :
-        # interrupt_before=[NODE_HITL_HR, NODE_HITL_MANAGER],
+        interrupt_before=[NODE_HITL_HR, NODE_HITL_MANAGER],
     )
 
     logger.info(
