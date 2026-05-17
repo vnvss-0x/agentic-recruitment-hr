@@ -12,6 +12,8 @@ from __future__ import annotations
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
+from app.models.candidate import RecruitmentDecision
+
 
 class CandidateRanking(BaseModel):
     """Résultat du scoring d'un CV par l'Agent 2."""
@@ -37,3 +39,16 @@ class ShortlistResult(BaseModel):
     screening_summary: str = ""
     total_candidates: int = 0
     shortlist_size: int = 0
+
+
+class InterviewEvaluation(BaseModel):
+    """Evaluation detaillee d'un candidat apres entretien."""
+
+    candidate_id: str
+    technical_score: float = Field(ge=0.0, le=100.0)
+    behavioral_score: float = Field(ge=0.0, le=100.0)
+    global_score: float = Field(ge=0.0, le=100.0)
+    recommendation: RecruitmentDecision = RecruitmentDecision.PENDING
+    justification: str = ""
+    strengths: List[str] = Field(default_factory=list)
+    concerns: List[str] = Field(default_factory=list)

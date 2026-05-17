@@ -34,6 +34,7 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from app.models.candidate import CandidateProfile, RawCV
+from app.models.evaluation import InterviewEvaluation
 from app.models.hitl import HRShortlistValidation, ManagerFinalValidation
 from app.models.interview import InterviewQuestionSet, InterviewResponseSet
 from app.models.job import JobProfile, RawJobOffer
@@ -189,7 +190,7 @@ class RecruitmentState(TypedDict, total=False):
     """
 
     # ── Sorties Agent 4 — Analyse des Entretiens ──────────────────
-    interview_evaluations: Optional[Dict[str, Any]]
+    interview_evaluations: Optional[Dict[str, InterviewEvaluation]]
     """
     Évaluations détaillées par candidat produites par l'Agent 4.
     Structure : {
