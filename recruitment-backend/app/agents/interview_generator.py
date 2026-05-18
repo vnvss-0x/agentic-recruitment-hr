@@ -20,6 +20,7 @@ from app.prompts.interview_generator_prompts import (
 	INTERVIEW_GENERATOR_SYSTEM_PROMPT,
 	build_interview_prompt,
 )
+from app.rag.retriever import context_to_text, retrieve_interview_context
 from app.utils.json_parser import extract_text, parse_json_response
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,9 @@ def interview_generator_node(state: RecruitmentState) -> dict:
 	skill_names = [s.name for s in job_profile.technical_skills]
 	soft_names = [s.name for s in job_profile.soft_skills]
 
+	rag_context = retrieve_interview_context(job_profile)
+	rag_docs = context_to_text(rag_context)
+
 	for candidate_id in shortlist_ids:
 		profile = next((p for p in candidate_profiles if p.candidate_id == candidate_id), None)
 		user_prompt = build_interview_prompt(
@@ -121,6 +125,7 @@ def interview_generator_node(state: RecruitmentState) -> dict:
 			candidate_name=(profile.full_name if profile else ""),
 			strengths=(profile.strengths if profile else []),
 			weaknesses=(profile.weaknesses if profile else []),
+			rag_docs=rag_docs,
 		)
 
 		try:

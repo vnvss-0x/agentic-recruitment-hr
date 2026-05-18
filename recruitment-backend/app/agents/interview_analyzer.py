@@ -17,6 +17,7 @@ from app.prompts.interview_analyzer_prompts import (
 	INTERVIEW_ANALYZER_SYSTEM_PROMPT,
 	build_interview_analysis_prompt,
 )
+from app.rag.retriever import context_to_text, retrieve_interview_context
 from app.utils.json_parser import extract_text, parse_json_response
 
 logger = logging.getLogger(__name__)
@@ -123,6 +124,9 @@ def interview_analyzer_node(state: RecruitmentState) -> dict:
 	skill_names = [s.name for s in job_profile.technical_skills]
 	soft_names = [s.name for s in job_profile.soft_skills]
 
+	rag_context = retrieve_interview_context(job_profile)
+	rag_docs = context_to_text(rag_context)
+
 	for candidate_id in candidate_ids:
 		profile = next((p for p in candidate_profiles if p.candidate_id == candidate_id), None)
 		questions_set = questions_by_candidate.get(candidate_id)
@@ -167,6 +171,7 @@ def interview_analyzer_node(state: RecruitmentState) -> dict:
 			candidate_id=candidate_id,
 			candidate_name=(profile.full_name if profile else ""),
 			qa_block=qa_block,
+			rag_docs=rag_docs,
 		)
 
 		try:

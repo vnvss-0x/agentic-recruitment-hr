@@ -35,6 +35,7 @@ from app.prompts.job_analyzer_prompts import (
     JOB_ANALYZER_SYSTEM_PROMPT,
     build_main_prompt,
 )
+from app.rag.retriever import retrieve_job_context
 
 logger = logging.getLogger(__name__)
 
@@ -346,6 +347,8 @@ def job_analyzer_node(state: RecruitmentState) -> dict:
 
     # ── 2. Récupération du contexte RAG (si disponible) ───────────
     rag_context = state.get("rag_job_context")
+    if not rag_context:
+        rag_context = retrieve_job_context(raw_text, None)
     rag_documents: list[str] | None = None
 
     if rag_context:
@@ -501,5 +504,6 @@ def job_analyzer_node(state: RecruitmentState) -> dict:
     return {
         "current_step": PipelineStep.JOB_ANALYSIS_DONE,
         "job_profile": job_profile,
+        "rag_job_context": rag_context,
         "activity_log": log,
     }

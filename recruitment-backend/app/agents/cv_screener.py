@@ -17,6 +17,7 @@ from app.prompts.cv_screener_prompts import (
     build_cv_prompt,
     build_summary_prompt,
 )
+from app.rag.retriever import context_to_text, retrieve_screening_context
 from app.utils.json_parser import extract_text, parse_json_response
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,8 @@ def cv_screener_node(state: RecruitmentState) -> dict:
     soft_skills = [s.name for s in job_profile.soft_skills]
 
     candidate_profiles: list[CandidateProfile] = []
+    rag_context = retrieve_screening_context(job_profile)
+    rag_docs = context_to_text(rag_context)
 
     for raw in raw_cvs:
         user_prompt = build_cv_prompt(
@@ -106,7 +109,7 @@ def cv_screener_node(state: RecruitmentState) -> dict:
             ideal_summary=job_profile.ideal_candidate_summary,
             candidate_id=raw.candidate_id,
             cv_text=raw.raw_text,
-            rag_docs=None,
+            rag_docs=rag_docs,
         )
 
         try:

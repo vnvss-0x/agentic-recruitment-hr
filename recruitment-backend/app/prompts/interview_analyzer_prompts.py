@@ -22,6 +22,8 @@ POSTE :
 - Competences techniques : {technical_skills}
 - Soft skills : {soft_skills}
 
+{rag_section}
+
 CANDIDAT :
 - ID : {candidate_id}
 - Nom : {candidate_name}
@@ -51,12 +53,18 @@ def build_interview_analysis_prompt(
 	candidate_id: str,
 	candidate_name: str,
 	qa_block: str,
+	rag_docs: list[str] | None = None,
 ) -> str:
+	if rag_docs:
+		rag_section = "CONTEXTE RAG :\n" + "\n\n".join(rag_docs)
+	else:
+		rag_section = "(Aucun contexte RAG disponible.)"
 	return INTERVIEW_ANALYZER_MAIN_PROMPT.format(
 		job_title=job_title or "(non specifie)",
 		experience_level=experience_level or "(non specifie)",
 		technical_skills=", ".join(technical_skills) or "(non specifiees)",
 		soft_skills=", ".join(soft_skills) or "(non specifies)",
+		rag_section=rag_section,
 		candidate_id=candidate_id,
 		candidate_name=candidate_name or "(inconnu)",
 		qa_block=qa_block or "(aucune reponse fournie)",
