@@ -35,20 +35,23 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # ── Imports internes ───────────────────────────────────────────────
+from app.api.events import dispatch_state_events
+from app.api.routes.hitl import router as hitl_router
+from app.api.routes.recruitment import router as recruitment_router
+from app.api.routes.reports import router as reports_router
+from app.api.routes.upload import router as upload_router
 from app.api.websocket import (
-    WSCompleteMessage,
     WSConnectedMessage,
-    WSErrorMessage,
-    WSLogMessage,
     WSPongMessage,
     WSSubscribedMessage,
-    WSStepUpdateMessage,
 )
+from app.api.ws_manager import ws_manager
 from app.core.config import settings
 from app.graph.state import PipelineStep, RecruitmentState, create_initial_state
 from app.graph.workflow import recruitment_graph
 from app.models.job import RawJobOffer
 from app.services.pdf_service import PDFExtractionError, pdf_service
+from app.services.session_manager import session_manager
 
 # ─────────────────────────────────────────────
 # Logging
@@ -60,95 +63,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-
-
-# ─────────────────────────────────────────────
-# Gestionnaire de connexions WebSocket
-# ─────────────────────────────────────────────
-
-
-class WebSocketManager:
-    """
-    Gère les connexions WebSocket actives par session_id.
-
-    Chaque session de recrutement peut avoir exactement une connexion
-    WebSocket ouverte pour recevoir les logs temps réel du pipeline.
-
-    Usage :
-        ws_manager = WebSocketManager()
-        await ws_manager.connect(session_id, websocket)
-        await ws_manager.broadcast(session_id, {"type": "log", "message": "..."})
-        ws_manager.disconnect(session_id)
-    """
-
-    def __init__(self) -> None:
-        # {session_id: WebSocket}
-        self._connections: dict[str, WebSocket] = {}
-
-    async def connect(self, session_id: str, websocket: WebSocket) -> None:
-        await websocket.accept()
-        self._connections[session_id] = websocket
-        logger.info(f"[WS] Connexion ouverte — session {session_id}")
-
-    def disconnect(self, session_id: str) -> None:
-        self._connections.pop(session_id, None)
-        logger.info(f"[WS] Connexion fermée — session {session_id}")
-
-    async def send(self, session_id: str, payload: dict[str, Any]) -> None:
-        """Envoie un message JSON à la session si elle est connectée."""
-        ws = self._connections.get(session_id)
-        if ws:
-            try:
-                await ws.send_json(payload)
-            except Exception as exc:
-                logger.warning(f"[WS] Échec d'envoi vers session {session_id} : {exc}")
-                self.disconnect(session_id)
-
-    async def broadcast_log(self, session_id: str, message: str) -> None:
-        """Raccourci pour envoyer un message de log au frontend."""
-        payload = WSLogMessage(session_id=session_id, message=message).model_dump(
-            mode="json"
-        )
-        await self.send(session_id, payload)
-
-    async def broadcast_step(
-        self,
-        session_id: str,
-        step: PipelineStep,
-        data: dict[str, Any] | None = None,
-    ) -> None:
-        """Notifie le frontend d'un changement d'étape du pipeline."""
-        payload = WSStepUpdateMessage(
-            session_id=session_id,
-            step=step,
-            data=data or {},
-        ).model_dump(mode="json")
-        await self.send(session_id, payload)
-
-    async def broadcast_error(self, session_id: str, message: str) -> None:
-        """Notifie le frontend d'une erreur critique."""
-        payload = WSErrorMessage(session_id=session_id, message=message).model_dump(
-            mode="json"
-        )
-        await self.send(session_id, payload)
-
-    async def broadcast_complete(
-        self,
-        session_id: str,
-        result: dict[str, Any],
-    ) -> None:
-        """Notifie le frontend que le pipeline (ou l'étape) est terminé."""
-        payload = WSCompleteMessage(session_id=session_id, result=result).model_dump(
-            mode="json"
-        )
-        await self.send(session_id, payload)
-
-    @property
-    def active_count(self) -> int:
-        return len(self._connections)
-
-
-ws_manager = WebSocketManager()
 
 
 # ─────────────────────────────────────────────
@@ -225,6 +139,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Routers ─────────────────────────────────────────────────────
+app.include_router(upload_router)
+app.include_router(recruitment_router)
+app.include_router(hitl_router)
+app.include_router(reports_router)
 
 
 # ─────────────────────────────────────────────
@@ -427,7 +347,11 @@ async def initialize_recruitment(
             detail=f"Erreur interne du pipeline LangGraph : {exc}",
         )
 
-    # ── 9. Extraction des résultats du state final ─────────────────
+    # ── 9. Sauvegarde de la session et événements WS ───────────────
+    session_manager.create(session_id, final_state)
+    await dispatch_state_events(session_id, None, final_state)
+
+    # ── 10. Extraction des résultats du state final ───────────────
     job_profile = final_state.get("job_profile")
     current_step = final_state.get("current_step", PipelineStep.INITIALIZED)
     activity_log = final_state.get("activity_log") or []
@@ -439,7 +363,7 @@ async def initialize_recruitment(
             f"[/initialize] Pipeline terminé avec erreur — session {session_id}"
         )
 
-    # ── 10. Calcul de la durée ─────────────────────────────────────
+    # ── 11. Calcul de la durée ─────────────────────────────────────
     end_time = datetime.now(timezone.utc)
     duration_ms = (end_time - start_time).total_seconds() * 1000
 
@@ -449,13 +373,13 @@ async def initialize_recruitment(
         f"session {session_id}"
     )
 
-    # ── 11. Sérialisation du JobProfile ───────────────────────────
+    # ── 12. Sérialisation du JobProfile ───────────────────────────
     job_profile_dict: dict[str, Any] | None = None
     if job_profile:
         # Pydantic v2 : model_dump() avec gestion des Enums
         job_profile_dict = job_profile.model_dump(mode="json")
 
-    # ── 12. Retour HTTP ───────────────────────────────────────────
+    # ── 13. Retour HTTP ───────────────────────────────────────────
     return InitializeResponse(
         session_id=session_id,
         status="error" if has_error else "success",
