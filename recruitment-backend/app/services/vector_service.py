@@ -1,5 +1,5 @@
 """
-Service ChromaDB — Base vectorielle & embeddings Google Gemini.
+Service ChromaDB — Base vectorielle & embeddings locaux (sentence-transformers).
 
 Architecture :
     VectorService orchestre trois collections ChromaDB indépendantes :
@@ -12,8 +12,7 @@ Architecture :
     │ evaluation_grids    │ Grilles RH, référentiels, modèles entretien │
     └─────────────────────┴─────────────────────────────────────────────┘
 
-    Embeddings : Google text-embedding-004 (768 dimensions)
-    Fallback   : sentence-transformers/all-MiniLM-L6-v2 (local, offline)
+    Embeddings : sentence-transformers/all-MiniLM-L6-v2 (384 dimensions, local)
 
 Usage :
     from app.services.vector_service import vector_service
@@ -53,8 +52,8 @@ COLLECTION_GRIDS = "evaluation_grids"
 
 ALL_COLLECTIONS = [COLLECTION_JOBS, COLLECTION_CVS, COLLECTION_GRIDS]
 
-GEMINI_EMBEDDING_MODEL = "models/text-embedding-004"
-FALLBACK_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_DIMENSIONS = 384
 
 DEFAULT_N_RESULTS = 3
 MAX_N_RESULTS = 10
@@ -108,51 +107,27 @@ class IndexResult:
 # ─────────────────────────────────────────────
 
 
-def _build_gemini_embedding_fn(api_key: str):
+def _build_embedding_fn(model_name: str):
     """
-    Construit la fonction d'embedding Gemini pour ChromaDB.
+    Embeddings locaux via sentence-transformers (ChromaDB EmbeddingFunction).
 
-    ChromaDB attend une EmbeddingFunction compatible avec son interface.
-    On utilise l'intégration native de chromadb avec Google AI.
-    """
-    try:
-        from chromadb.utils.embedding_functions import (
-            GoogleGenerativeAiEmbeddingFunction,
-        )
-
-        fn = GoogleGenerativeAiEmbeddingFunction(
-            api_key=api_key,
-            model_name=GEMINI_EMBEDDING_MODEL,
-        )
-        logger.info(
-            f"[VectorService] Embeddings Gemini initialisés ({GEMINI_EMBEDDING_MODEL})"
-        )
-        return fn
-    except Exception as exc:
-        logger.warning(
-            f"[VectorService] Échec init embeddings Gemini : {exc}. "
-            "Fallback sur sentence-transformers."
-        )
-        return None
-
-
-def _build_local_embedding_fn():
-    """
-    Fallback : embeddings locaux via sentence-transformers.
-    Ne nécessite pas de clé API — utile en mode offline / tests.
+    Ne nécessite pas de clé API — fonctionne hors ligne après téléchargement du modèle.
     """
     try:
         from chromadb.utils.embedding_functions import (
             SentenceTransformerEmbeddingFunction,
         )
 
-        fn = SentenceTransformerEmbeddingFunction(model_name=FALLBACK_EMBEDDING_MODEL)
+        fn = SentenceTransformerEmbeddingFunction(model_name=model_name)
+        fn(["healthcheck"])
         logger.info(
-            f"[VectorService] Embeddings locaux initialisés ({FALLBACK_EMBEDDING_MODEL})"
+            "[VectorService] Embeddings initialisés (%s, %d dimensions)",
+            model_name,
+            EMBEDDING_DIMENSIONS,
         )
         return fn
     except Exception as exc:
-        logger.error(f"[VectorService] Aucun embedding disponible : {exc}")
+        logger.error("[VectorService] Échec init embeddings : %s", exc)
         return None
 
 
@@ -172,6 +147,7 @@ class VectorService:
     def __init__(self) -> None:
         self._client = None
         self._embedding_fn = None
+        self._embedding_model_name = EMBEDDING_MODEL
         self._collections: dict[str, Any] = {}
         self._initialized = False
 
@@ -189,7 +165,7 @@ class VectorService:
         """
         Initialisation complète :
         1. Client ChromaDB persistant
-        2. Fonction d'embedding (Gemini → fallback local)
+        2. Fonction d'embedding sentence-transformers (local)
         3. Création/récupération des trois collections
         """
         import chromadb
@@ -202,28 +178,12 @@ class VectorService:
         self._client = chromadb.PersistentClient(path=chroma_path)
         logger.info(f"[VectorService] ChromaDB initialisé → {chroma_path}")
 
-        # ── Fonction d'embedding ────────────────────────────────────
-        api_key = settings.google_api_key
-        if api_key:
-            self._embedding_fn = _build_gemini_embedding_fn(api_key)
-            if self._embedding_fn is not None:
-                try:
-                    self._embedding_fn(["healthcheck"])
-                except Exception as exc:
-                    logger.warning(
-                        "[VectorService] Embeddings Gemini indisponibles (%s). "
-                        "Fallback sentence-transformers.",
-                        exc,
-                    )
-                    self._embedding_fn = None
-
-        if self._embedding_fn is None:
-            self._embedding_fn = _build_local_embedding_fn()
-
+        # ── Fonction d'embedding (local uniquement) ─────────────────
+        self._embedding_fn = _build_embedding_fn(EMBEDDING_MODEL)
         if self._embedding_fn is None:
             raise RuntimeError(
-                "Aucune fonction d'embedding disponible. "
-                "Vérifiez GOOGLE_API_KEY ou installez sentence-transformers."
+                "Impossible d'initialiser les embeddings locaux. "
+                f"Installez sentence-transformers et vérifiez le modèle {EMBEDDING_MODEL}."
             )
 
         # ── Collections ─────────────────────────────────────────────
@@ -482,12 +442,8 @@ class VectorService:
             return {
                 "collection": collection,
                 "document_count": col.count(),
-                "embedding_model": (
-                    GEMINI_EMBEDDING_MODEL
-                    if self._embedding_fn
-                    and "Google" in type(self._embedding_fn).__name__
-                    else FALLBACK_EMBEDDING_MODEL
-                ),
+                "embedding_model": self._embedding_model_name,
+                "embedding_dimensions": EMBEDDING_DIMENSIONS,
             }
         except Exception as exc:
             return {"collection": collection, "error": str(exc)}

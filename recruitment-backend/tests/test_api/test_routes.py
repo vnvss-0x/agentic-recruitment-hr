@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services.pdf_service import pdf_service
-from app.api import pipeline
+from app.api.routes import upload as upload_routes
 from app.services.session_manager import session_manager
 from app.graph.state import PipelineStep
 from app.models.interview import InterviewQuestion, InterviewQuestionSet, InterviewQuestionType
@@ -95,7 +95,7 @@ def test_upload_cvs_endpoint(monkeypatch):
         new_state["shortlisted_candidate_ids"] = ["cand-1"]
         return new_state
 
-    monkeypatch.setattr(pipeline, "run_pipeline", fake_run_pipeline)
+    monkeypatch.setattr(upload_routes, "run_pipeline", fake_run_pipeline)
 
     files = {"files": ("cand-1.txt", io.BytesIO(b"hello world"), "text/plain")}
     r = client.post(f"/v1/recruitment/sess-2/upload-cvs", files=files)
