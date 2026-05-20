@@ -93,14 +93,14 @@ def build_interview_prompt(
 		rag_section = "CONTEXTE RAG :\n" + "\n\n".join(rag_docs)
 	else:
 		rag_section = "(Aucun contexte RAG disponible.)"
-		return INTERVIEW_GENERATOR_MAIN_PROMPT.format(
-				job_title=job_title or "(non specifie)",
-				experience_level=experience_level or "(non specifie)",
-				technical_skills=", ".join(technical_skills) or "(non specifiees)",
-				soft_skills=", ".join(soft_skills) or "(non specifies)",
+	return INTERVIEW_GENERATOR_MAIN_PROMPT.format(
+		job_title=job_title or "(non specifie)",
+		experience_level=experience_level or "(non specifie)",
+		technical_skills=", ".join(technical_skills) or "(non specifiees)",
+		soft_skills=", ".join(soft_skills) or "(non specifies)",
 		rag_section=rag_section,
-				candidate_id=candidate_id,
-				candidate_name=candidate_name or "(inconnu)",
-				strengths=", ".join(strengths) or "(non specifies)",
-				weaknesses=", ".join(weaknesses) or "(non specifies)",
-		)
+		candidate_id=candidate_id,
+		candidate_name=candidate_name or "(inconnu)",
+		strengths=", ".join(strengths) or "(non specifies)",
+		weaknesses=", ".join(weaknesses) or "(non specifies)",
+	)

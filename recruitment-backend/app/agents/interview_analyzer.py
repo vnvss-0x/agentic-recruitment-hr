@@ -5,6 +5,7 @@ Agent 4 - Interview analysis using Gemini.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -15,7 +16,14 @@ from app.models.candidate import RecruitmentDecision
 from app.models.evaluation import InterviewEvaluation
 from app.prompts.interview_analyzer_prompts import (
 	INTERVIEW_ANALYZER_SYSTEM_PROMPT,
+	INTERVIEW_ANALYZER_SYSTEM_PROMPT_B,
 	build_interview_analysis_prompt,
+)
+from app.prompts.prompt_evaluator import (
+	PromptVariant,
+	append_prompt_metrics,
+	compute_interview_eval_metrics,
+	select_prompt_variant,
 )
 from app.rag.retriever import context_to_text, retrieve_interview_context
 from app.utils.json_parser import extract_text, parse_json_response
@@ -117,9 +125,16 @@ def interview_analyzer_node(state: RecruitmentState) -> dict:
 	responses = state.get("interview_responses") or {}
 	questions_by_candidate = state.get("interview_questions") or {}
 	errors = state.get("errors") or []
+	prompt_metrics = state.get("prompt_metrics") or {}
 
 	llm = _build_llm()
 	evaluations: dict[str, InterviewEvaluation] = {}
+
+	variants = [
+		PromptVariant("A", INTERVIEW_ANALYZER_SYSTEM_PROMPT, weight=1.0),
+		PromptVariant("B", INTERVIEW_ANALYZER_SYSTEM_PROMPT_B, weight=1.0),
+	]
+	variant = select_prompt_variant(AGENT_NAME, state.get("session_id"), variants)
 
 	skill_names = [s.name for s in job_profile.technical_skills]
 	soft_names = [s.name for s in job_profile.soft_skills]
@@ -175,15 +190,27 @@ def interview_analyzer_node(state: RecruitmentState) -> dict:
 		)
 
 		try:
+			start = time.perf_counter()
 			response = llm.invoke(
 				[
-					("system", INTERVIEW_ANALYZER_SYSTEM_PROMPT),
+					("system", variant.system_prompt),
 					("human", user_prompt),
 				]
 			)
 			raw_content = extract_text(response.content)
 			parsed = parse_json_response(raw_content)
 			evaluations[candidate_id] = _sanitize_evaluation(parsed, candidate_id)
+			latency_ms = (time.perf_counter() - start) * 1000
+
+			metrics = compute_interview_eval_metrics(evaluations[candidate_id])
+			metrics.update(
+				{
+					"variant_id": variant.variant_id,
+					"latency_ms": round(latency_ms, 2),
+					"candidate_id": candidate_id,
+				}
+			)
+			prompt_metrics = append_prompt_metrics(prompt_metrics, AGENT_NAME, metrics)
 		except Exception as exc:
 			logger.warning("[%s] Evaluation failed for %s: %s", AGENT_NAME, candidate_id, exc)
 			errors.append(
@@ -204,6 +231,17 @@ def interview_analyzer_node(state: RecruitmentState) -> dict:
 				strengths=[],
 				concerns=["Evaluation failed."],
 			)
+			latency_ms = 0.0
+
+			metrics = compute_interview_eval_metrics(evaluations[candidate_id])
+			metrics.update(
+				{
+					"variant_id": variant.variant_id,
+					"latency_ms": round(latency_ms, 2),
+					"candidate_id": candidate_id,
+				}
+			)
+			prompt_metrics = append_prompt_metrics(prompt_metrics, AGENT_NAME, metrics)
 
 	recommended_candidate_id = None
 	if evaluations:
@@ -222,5 +260,6 @@ def interview_analyzer_node(state: RecruitmentState) -> dict:
 		"interview_evaluations": evaluations,
 		"recommended_candidate_id": recommended_candidate_id,
 		"errors": errors,
+		"prompt_metrics": prompt_metrics,
 		"activity_log": log,
 	}

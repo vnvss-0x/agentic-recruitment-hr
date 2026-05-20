@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
+import time
 from typing import Any
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -17,7 +18,14 @@ from app.models.evaluation import InterviewEvaluation
 from app.models.report import FinalReport, RankingEntry, ReportTimelineEvent
 from app.prompts.report_generator_prompts import (
 	REPORT_GENERATOR_SYSTEM_PROMPT,
+	REPORT_GENERATOR_SYSTEM_PROMPT_B,
 	build_report_prompt,
+)
+from app.prompts.prompt_evaluator import (
+	PromptVariant,
+	append_prompt_metrics,
+	compute_report_metrics,
+	select_prompt_variant,
 )
 from app.utils.json_parser import extract_text, parse_json_response
 
@@ -78,6 +86,16 @@ def report_generator_node(state: RecruitmentState) -> dict:
 
 	evaluations: dict[str, InterviewEvaluation] = state.get("interview_evaluations") or {}
 	errors = state.get("errors") or []
+	prompt_metrics = state.get("prompt_metrics") or {}
+
+	variant = select_prompt_variant(
+		AGENT_NAME,
+		state.get("session_id"),
+		[
+			PromptVariant("A", REPORT_GENERATOR_SYSTEM_PROMPT, weight=1.0),
+			PromptVariant("B", REPORT_GENERATOR_SYSTEM_PROMPT_B, weight=1.0),
+		],
+	)
 
 	ranking: list[RankingEntry] = []
 	for profile in candidate_profiles:
@@ -122,15 +140,26 @@ def report_generator_node(state: RecruitmentState) -> dict:
 
 	report_data: dict[str, Any] = {}
 	try:
+		start = time.perf_counter()
 		response = llm.invoke(
 			[
-				("system", REPORT_GENERATOR_SYSTEM_PROMPT),
+				("system", variant.system_prompt),
 				("human", prompt),
 			]
 		)
 		raw_content = extract_text(response.content)
 		parsed = parse_json_response(raw_content)
 		report_data = _sanitize_report_data(parsed, candidate_ids)
+		latency_ms = (time.perf_counter() - start) * 1000
+
+		metrics = compute_report_metrics(report_data, candidate_ids)
+		metrics.update(
+			{
+				"variant_id": variant.variant_id,
+				"latency_ms": round(latency_ms, 2),
+			}
+		)
+		prompt_metrics = append_prompt_metrics(prompt_metrics, AGENT_NAME, metrics)
 	except Exception as exc:
 		logger.warning("[%s] Report synthesis failed: %s", AGENT_NAME, exc)
 		errors.append(
@@ -142,6 +171,16 @@ def report_generator_node(state: RecruitmentState) -> dict:
 			)
 		)
 		report_data = _sanitize_report_data({}, candidate_ids)
+		latency_ms = 0.0
+
+		metrics = compute_report_metrics(report_data, candidate_ids)
+		metrics.update(
+			{
+				"variant_id": variant.variant_id,
+				"latency_ms": round(latency_ms, 2),
+			}
+		)
+		prompt_metrics = append_prompt_metrics(prompt_metrics, AGENT_NAME, metrics)
 
 	selected_id = report_data.get("selected_candidate_id")
 	if not selected_id:
@@ -189,5 +228,6 @@ def report_generator_node(state: RecruitmentState) -> dict:
 		"current_step": PipelineStep.COMPLETED,
 		"final_report": report,
 		"errors": errors,
+		"prompt_metrics": prompt_metrics,
 		"activity_log": log,
 	}
