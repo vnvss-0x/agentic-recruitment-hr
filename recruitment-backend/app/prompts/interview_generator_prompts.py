@@ -15,6 +15,16 @@ Regles ABSOLUES :
 4. Les questions doivent etre concretes et adaptees au poste.
 """
 
+INTERVIEW_GENERATOR_SYSTEM_PROMPT_B = """\
+Tu es un expert RH specialise dans la preparation d'entretiens.
+Ta mission : generer des questions utiles, precises et variees.
+
+Regles ABSOLUES :
+1. Reponds UNIQUEMENT avec un objet JSON brut.
+2. Les listes ne doivent jamais etre null : utilise [].
+3. Evite les questions generiques ou redondantes.
+"""
+
 INTERVIEW_GENERATOR_MAIN_PROMPT = """\
 POSTE :
 - Titre : {job_title}

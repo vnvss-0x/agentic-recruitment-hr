@@ -14,6 +14,15 @@ Regles ABSOLUES :
 3. selected_candidate_id doit appartenir a la liste fournie.
 """
 
+REPORT_GENERATOR_SYSTEM_PROMPT_B = """\
+Tu es un expert RH charge de produire un rapport final clair et actionnable.
+Tu dois synthetiser les resultats de facon concise et factuelle.
+
+Regles ABSOLUES :
+1. Reponds UNIQUEMENT avec un objet JSON brut.
+2. Les champs string ne doivent jamais etre null : utilise "".
+"""
+
 REPORT_GENERATOR_MAIN_PROMPT = """\
 POSTE :
 - Titre : {job_title}

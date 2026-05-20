@@ -5,6 +5,7 @@ Agent 3 - Interview question generator using Gemini.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -18,7 +19,14 @@ from app.models.interview import (
 )
 from app.prompts.interview_generator_prompts import (
 	INTERVIEW_GENERATOR_SYSTEM_PROMPT,
+	INTERVIEW_GENERATOR_SYSTEM_PROMPT_B,
 	build_interview_prompt,
+)
+from app.prompts.prompt_evaluator import (
+	PromptVariant,
+	append_prompt_metrics,
+	compute_question_metrics,
+	select_prompt_variant,
 )
 from app.rag.retriever import context_to_text, retrieve_interview_context
 from app.utils.json_parser import extract_text, parse_json_response
@@ -106,7 +114,14 @@ def interview_generator_node(state: RecruitmentState) -> dict:
 
 	llm = _build_llm()
 	errors = state.get("errors") or []
+	prompt_metrics = state.get("prompt_metrics") or {}
 	questions: dict[str, InterviewQuestionSet] = {}
+
+	variants = [
+		PromptVariant("A", INTERVIEW_GENERATOR_SYSTEM_PROMPT, weight=1.0),
+		PromptVariant("B", INTERVIEW_GENERATOR_SYSTEM_PROMPT_B, weight=1.0),
+	]
+	variant = select_prompt_variant(AGENT_NAME, state.get("session_id"), variants)
 
 	skill_names = [s.name for s in job_profile.technical_skills]
 	soft_names = [s.name for s in job_profile.soft_skills]
@@ -129,15 +144,17 @@ def interview_generator_node(state: RecruitmentState) -> dict:
 		)
 
 		try:
+			start = time.perf_counter()
 			response = llm.invoke(
 				[
-					("system", INTERVIEW_GENERATOR_SYSTEM_PROMPT),
+					("system", variant.system_prompt),
 					("human", user_prompt),
 				]
 			)
 			raw_content = extract_text(response.content)
 			parsed = parse_json_response(raw_content)
 			questions[candidate_id] = _sanitize_questions(parsed, candidate_id)
+			latency_ms = (time.perf_counter() - start) * 1000
 		except Exception as exc:
 			logger.warning("[%s] Question generation failed for %s: %s", AGENT_NAME, candidate_id, exc)
 			errors.append(
@@ -149,6 +166,17 @@ def interview_generator_node(state: RecruitmentState) -> dict:
 				)
 			)
 			questions[candidate_id] = InterviewQuestionSet()
+			latency_ms = 0.0
+
+		metrics = compute_question_metrics(questions[candidate_id])
+		metrics.update(
+			{
+				"variant_id": variant.variant_id,
+				"latency_ms": round(latency_ms, 2),
+				"candidate_id": candidate_id,
+			}
+		)
+		prompt_metrics = append_prompt_metrics(prompt_metrics, AGENT_NAME, metrics)
 
 	log = log_activity(
 		{**state, "activity_log": log},
@@ -160,5 +188,6 @@ def interview_generator_node(state: RecruitmentState) -> dict:
 		"current_step": PipelineStep.INTERVIEW_GENERATION_DONE,
 		"interview_questions": questions,
 		"errors": errors,
+		"prompt_metrics": prompt_metrics,
 		"activity_log": log,
 	}

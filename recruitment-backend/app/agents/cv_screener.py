@@ -5,6 +5,7 @@ Agent 2 - CV screening and scoring using Gemini.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -14,8 +15,15 @@ from app.graph.state import PipelineStep, RecruitmentState
 from app.models.candidate import CandidateProfile, CandidateStatus
 from app.prompts.cv_screener_prompts import (
     CV_SCREENER_SYSTEM_PROMPT,
+    CV_SCREENER_SYSTEM_PROMPT_B,
     build_cv_prompt,
     build_summary_prompt,
+)
+from app.prompts.prompt_evaluator import (
+    PromptVariant,
+    append_prompt_metrics,
+    compute_cv_scoring_metrics,
+    select_prompt_variant,
 )
 from app.rag.retriever import context_to_text, retrieve_screening_context
 from app.utils.json_parser import extract_text, parse_json_response
@@ -85,6 +93,12 @@ def cv_screener_node(state: RecruitmentState) -> dict:
 
     llm = _build_llm()
     errors = state.get("errors") or []
+    prompt_metrics = state.get("prompt_metrics") or {}
+    variants = [
+        PromptVariant("A", CV_SCREENER_SYSTEM_PROMPT, weight=1.0),
+        PromptVariant("B", CV_SCREENER_SYSTEM_PROMPT_B, weight=1.0),
+    ]
+    variant = select_prompt_variant(AGENT_NAME, state.get("session_id"), variants)
 
     mandatory_skills = [
         s.name for s in job_profile.technical_skills if s.is_mandatory
@@ -113,15 +127,17 @@ def cv_screener_node(state: RecruitmentState) -> dict:
         )
 
         try:
+            start = time.perf_counter()
             response = llm.invoke(
                 [
-                    ("system", CV_SCREENER_SYSTEM_PROMPT),
+                    ("system", variant.system_prompt),
                     ("human", user_prompt),
                 ]
             )
             raw_content = extract_text(response.content)
             parsed = parse_json_response(raw_content)
             parsed = _sanitize_scoring_data(parsed, raw.candidate_id)
+            latency_ms = (time.perf_counter() - start) * 1000
         except Exception as exc:
             logger.warning("[%s] Scoring failed for %s: %s", AGENT_NAME, raw.candidate_id, exc)
             errors.append(
@@ -133,6 +149,17 @@ def cv_screener_node(state: RecruitmentState) -> dict:
                 )
             )
             parsed = _sanitize_scoring_data({}, raw.candidate_id)
+            latency_ms = 0.0
+
+        metrics = compute_cv_scoring_metrics(parsed)
+        metrics.update(
+            {
+                "variant_id": variant.variant_id,
+                "latency_ms": round(latency_ms, 2),
+                "candidate_id": raw.candidate_id,
+            }
+        )
+        prompt_metrics = append_prompt_metrics(prompt_metrics, AGENT_NAME, metrics)
 
         candidate_profiles.append(
             CandidateProfile(
@@ -213,5 +240,6 @@ def cv_screener_node(state: RecruitmentState) -> dict:
         "shortlisted_candidate_ids": shortlisted_ids,
         "screening_summary": screening_summary,
         "errors": errors,
+        "prompt_metrics": prompt_metrics,
         "activity_log": log,
     }

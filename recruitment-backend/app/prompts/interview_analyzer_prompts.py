@@ -15,6 +15,16 @@ Regles ABSOLUES :
 4. recommendation doit etre : "recruter", "liste_attente", "rejeter", "en_attente".
 """
 
+INTERVIEW_ANALYZER_SYSTEM_PROMPT_B = """\
+Tu es un evaluateur RH charge d'analyser des entretiens.
+Tu dois donner des scores coherents et des justifications concises.
+
+Regles ABSOLUES :
+1. Reponds UNIQUEMENT avec un objet JSON brut.
+2. Les scores sont entre 0 et 100.
+3. Les listes ne doivent jamais etre null : utilise [].
+"""
+
 INTERVIEW_ANALYZER_MAIN_PROMPT = """\
 POSTE :
 - Titre : {job_title}
