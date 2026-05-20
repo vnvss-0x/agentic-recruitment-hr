@@ -1,0 +1,24 @@
+Poste : Data Analyst (confirmé)
+Niveau : 3 à 5 ans
+
+Compétences obligatoires :
+- SQL avancé (CTE, fenêtres, optimisation)
+- Python pour l'analyse (pandas, visualisation)
+- Tableaux de bord : Power BI ou Looker / Metabase
+- Statistiques descriptives et A/B testing de base
+
+Compétences souhaitées :
+- dbt ou pipelines ELT légers
+- Notions cloud (BigQuery, Snowflake ou Redshift)
+
+Soft skills :
+- Esprit synthèse pour des audiences métier non techniques
+- Rigueur sur la qualité des données et la traçabilité
+
+Livrables attendus :
+- KPIs RH et recrutement (time-to-hire, source quality)
+- Rapports mensuels pour la direction
+- Recommandations actionnables sur les processus
+
+Profil idéal :
+Profil hybride métier/tech, capable d'interviewer les recruteurs pour clarifier le besoin avant de modéliser les indicateurs.

@@ -10,6 +10,10 @@ from pydantic import BaseModel, Field
 
 from app.api.events import dispatch_state_events
 from app.api.pipeline import run_pipeline
+from app.api.state_serializers import (
+	serialize_interview_questions,
+	serialize_session_summary,
+)
 from app.core.config import settings
 from app.graph.state import PipelineStep, RecruitmentState
 from app.models.interview import InterviewResponseSet
@@ -44,6 +48,67 @@ class InterviewResponsesResult(BaseModel):
 	session_id: str
 	current_step: str
 	recommended_candidate_id: str | None = None
+
+
+class SessionResponse(BaseModel):
+	session_id: str
+	current_step: str
+	created_at: str | None = None
+	has_critical_error: bool = False
+	job_profile: dict | None = None
+	shortlisted_candidate_ids: list[str] = Field(default_factory=list)
+	validated_shortlist_ids: list[str] = Field(default_factory=list)
+	recommended_candidate_id: str | None = None
+	has_interview_questions: bool = False
+	has_interview_responses: bool = False
+	has_final_report: bool = False
+	awaiting_hitl_hr: bool = False
+	awaiting_hitl_manager: bool = False
+	activity_log: list[str] = Field(default_factory=list)
+	errors: list[dict] = Field(default_factory=list)
+
+
+class InterviewQuestionsResponse(BaseModel):
+	session_id: str
+	candidates: Dict[str, dict] = Field(default_factory=dict)
+
+
+@router.get(
+	"/{session_id}",
+	response_model=SessionResponse,
+	status_code=status.HTTP_200_OK,
+	summary="État courant de la session de recrutement",
+)
+async def get_session(session_id: str) -> SessionResponse:
+	record = session_manager.get(session_id)
+	if not record:
+		raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+	summary = serialize_session_summary(record.state)
+	return SessionResponse(**summary)
+
+
+@router.get(
+	"/{session_id}/interviews/questions",
+	response_model=InterviewQuestionsResponse,
+	status_code=status.HTTP_200_OK,
+	summary="Questionnaires d'entretien par candidat shortlisté",
+)
+async def get_interview_questions(session_id: str) -> InterviewQuestionsResponse:
+	record = session_manager.get(session_id)
+	if not record:
+		raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+	state: RecruitmentState = record.state
+	questions = state.get("interview_questions")
+	if not questions:
+		raise HTTPException(
+			status_code=status.HTTP_404_NOT_FOUND,
+			detail="Interview questions not available yet. Complete HITL HR validation first.",
+		)
+
+	payload = serialize_interview_questions(state)
+	return InterviewQuestionsResponse(**payload)
 
 
 @router.get(

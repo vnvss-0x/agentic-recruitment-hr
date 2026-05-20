@@ -1,0 +1,28 @@
+Poste : Développeur Python Senior
+Entreprise type : ESN / produit SaaS B2B
+Niveau d'expérience : 5 à 8 ans
+
+Compétences techniques obligatoires :
+- Python 3.10+ (asyncio, typing)
+- Framework web : FastAPI ou Django REST
+- Bases relationnelles : PostgreSQL (modélisation, indexation)
+- Conteneurisation : Docker, notions Kubernetes
+- Tests automatisés : pytest, couverture > 70 %
+
+Compétences techniques souhaitées :
+- LangChain / LangGraph ou orchestration d'agents
+- CI/CD (GitHub Actions, GitLab CI)
+- Observabilité : logs structurés, métriques
+
+Soft skills :
+- Autonomie sur un périmètre backend
+- Communication avec équipes produit et QA
+- Capacité de mentorat sur profils junior
+
+Responsabilités principales :
+- Concevoir et maintenir des APIs REST robustes
+- Participer aux revues de code et à la définition d'architecture
+- Documenter les choix techniques et les runbooks
+
+Profil candidat idéal :
+Ingénieur backend ayant livré en production des services à fort trafic, à l'aise avec le trade-off performance/maintenabilité.

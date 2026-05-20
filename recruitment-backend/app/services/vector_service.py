@@ -206,6 +206,16 @@ class VectorService:
         api_key = settings.google_api_key
         if api_key:
             self._embedding_fn = _build_gemini_embedding_fn(api_key)
+            if self._embedding_fn is not None:
+                try:
+                    self._embedding_fn(["healthcheck"])
+                except Exception as exc:
+                    logger.warning(
+                        "[VectorService] Embeddings Gemini indisponibles (%s). "
+                        "Fallback sentence-transformers.",
+                        exc,
+                    )
+                    self._embedding_fn = None
 
         if self._embedding_fn is None:
             self._embedding_fn = _build_local_embedding_fn()

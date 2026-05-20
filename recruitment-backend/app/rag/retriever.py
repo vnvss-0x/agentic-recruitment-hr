@@ -4,11 +4,11 @@ Business retriever for RAG contexts.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
 from app.models.job import JobProfile
+from app.utils.async_bridge import run_coroutine_sync
 from app.services.vector_service import (
 	COLLECTION_GRIDS,
 	COLLECTION_JOBS,
@@ -19,14 +19,6 @@ from app.services.vector_service import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_DOCS = 4
-
-
-def _run_async(coro):
-	try:
-		return asyncio.run(coro)
-	except RuntimeError:
-		logger.warning("RAG retriever called from running event loop; skipping.")
-		return []
 
 
 def _format_results(results: list[SearchResult], source: str) -> list[dict[str, Any]]:
@@ -66,14 +58,14 @@ def retrieve_job_context(
 	if not query:
 		return []
 
-	job_results = _run_async(
+	job_results = run_coroutine_sync(
 		vector_service.similarity_search(
 			collection=COLLECTION_JOBS,
 			query=query,
 			n_results=max_docs,
 		)
 	)
-	grid_results = _run_async(
+	grid_results = run_coroutine_sync(
 		vector_service.similarity_search(
 			collection=COLLECTION_GRIDS,
 			query=query,
@@ -94,7 +86,7 @@ def retrieve_screening_context(
 ) -> list[dict[str, Any]]:
 	"""Retrieve RAG context for CV screening."""
 	query = build_job_query(job_profile)
-	grid_results = _run_async(
+	grid_results = run_coroutine_sync(
 		vector_service.similarity_search(
 			collection=COLLECTION_GRIDS,
 			query=query,
@@ -110,7 +102,7 @@ def retrieve_interview_context(
 ) -> list[dict[str, Any]]:
 	"""Retrieve RAG context for interview generation and analysis."""
 	query = build_job_query(job_profile)
-	grid_results = _run_async(
+	grid_results = run_coroutine_sync(
 		vector_service.similarity_search(
 			collection=COLLECTION_GRIDS,
 			query=query,

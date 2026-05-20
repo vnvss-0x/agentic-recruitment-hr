@@ -241,18 +241,18 @@ async def initialize_recruitment(
     ),
 ) -> InitializeResponse:
     """
-    Lance le pipeline de recrutement complet depuis une offre d'emploi.
+    Analyse l'offre d'emploi (Agent 1 uniquement) puis crée la session.
 
-    Étapes exécutées par cet endpoint :
+    Étapes exécutées :
         1. Validation et extraction du texte PDF/TXT.
         2. Construction du RecruitmentState initial.
-        3. Exécution du graphe LangGraph (Agent 1 → placeholders).
-        4. Retour du JobProfile structuré généré par l'Agent 1.
+        3. LangGraph : Agent 1 (Job Analyzer), puis pause (pas de CVs).
+        4. Retour du JobProfile structuré.
 
-    Le `session_id` retourné permet ensuite de :
-        - Se connecter au WebSocket (/v1/ws/{session_id})
-        - Envoyer les CVs (/v1/recruitment/{session_id}/upload-cvs)
-        - Valider les HITL (/v1/recruitment/{session_id}/hitl/*)
+    Étapes suivantes (autres endpoints) :
+        - WebSocket : /v1/ws/{session_id} (replay des événements bufferisés)
+        - CVs : POST /v1/recruitment/{session_id}/upload-cvs
+        - HITL : POST /v1/recruitment/{session_id}/hitl/*
     """
     start_time = datetime.now(timezone.utc)
 
@@ -447,6 +447,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
             "En attente des evenements du pipeline..."
         ),
     ).model_dump(mode="json")
+    replayed = await ws_manager.replay_buffer(session_id)
+    if replayed:
+        logger.info(
+            "[WS] Replayed %d buffered event(s) for session %s",
+            replayed,
+            session_id,
+        )
+
     await ws_manager.send(session_id, connected_payload)
 
     try:

@@ -1,0 +1,44 @@
+{
+  "domain": "backend_python",
+  "version": "1.0",
+  "levels": {
+    "junior": {
+      "experience_years": "0-2",
+      "skills": [
+        "Syntaxe Python et structures de données",
+        "HTTP, REST, codes de statut",
+        "SQL SELECT/JOIN de base",
+        "Git : commit, branch, pull request"
+      ]
+    },
+    "mid": {
+      "experience_years": "3-5",
+      "skills": [
+        "FastAPI ou Django REST en production",
+        "ORM (SQLAlchemy), migrations",
+        "Tests unitaires et intégration pytest",
+        "Docker et variables d'environnement"
+      ]
+    },
+    "senior": {
+      "experience_years": "5+",
+      "skills": [
+        "Architecture microservices ou modulaire",
+        "Performance, caching, files d'attente",
+        "Sécurité OWASP API Top 10",
+        "Mentorat et revues de code structurantes"
+      ]
+    }
+  },
+  "interview_topics": [
+    "Design d'une API de recrutement multi-étapes",
+    "Gestion d'état et idempotence",
+    "Intégration LLM avec garde-fous (timeouts, parsing JSON)",
+    "Observabilité et debugging en production"
+  ],
+  "scoring_hints": {
+    "strong_hire": "Couvre niveau senior sur au moins 70 % des topics",
+    "waitlist": "Niveau mid solide avec lacunes architecturales comblables",
+    "reject": "Niveau junior sur poste senior ou réponses incohérentes"
+  }
+}

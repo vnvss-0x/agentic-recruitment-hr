@@ -1,0 +1,31 @@
+{
+  "domain": "recruitment_hr",
+  "version": "1.0",
+  "process_stages": [
+    "Analyse de poste et profil cible",
+    "Sourcing et présélection CV",
+    "Entretiens techniques et comportementaux",
+    "Décision collégiale RH + manager",
+    "Offre et onboarding"
+  ],
+  "kpis": {
+    "time_to_hire_days": { "target": 45, "critical": 70 },
+    "offer_acceptance_rate": { "target": 0.85, "critical": 0.65 },
+    "quality_of_hire_score": { "target": 4.0, "scale": "1-5" }
+  },
+  "hitl_checkpoints": {
+    "hr_shortlist": {
+      "purpose": "Valider la pertinence des candidats avant entretiens",
+      "allowed_actions": ["approve", "modify", "request_reanalysis"]
+    },
+    "manager_final": {
+      "purpose": "Décision finale humaine sur le recrutement",
+      "allowed_actions": ["hire", "additional_interview", "cancel"]
+    }
+  },
+  "rag_usage": {
+    "job_analysis": "Comparer aux job_templates historiques",
+    "cv_screening": "Aligner sur grilles et référentiels de compétences",
+    "interviews": "Suggérer questions calibrées par niveau"
+  }
+}

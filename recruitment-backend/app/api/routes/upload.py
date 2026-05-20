@@ -80,6 +80,7 @@ async def upload_cvs(
 	update = {
 		"raw_cvs": existing + raw_cvs,
 		"current_step": PipelineStep.CV_SCREENING,
+		"has_critical_error": False,
 	}
 
 	try:

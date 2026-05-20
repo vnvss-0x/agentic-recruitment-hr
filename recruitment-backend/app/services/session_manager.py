@@ -1,7 +1,9 @@
 """
 Session manager for recruitment pipeline executions.
 
-Current storage model: in-memory only.
+Storage: in-memory dict (thread-safe). Sessions are lost on server restart.
+For production, replace with Redis or a database and align LangGraph checkpointer
+(e.g. SqliteSaver / PostgresSaver).
 
 Responsibilities:
 1) Create and track session records

@@ -12,26 +12,26 @@ Architecture du graphe :
   [job_analyzer_node]          ← Agent 1 : Analyse du poste
       │
       ▼
-  [cv_screener_node]           ← Agent 2 : Screening des CVs       [TODO]
+  [cv_screener_node]           ← Agent 2 : Screening des CVs
       │
       ▼
-  [hitl_hr_validation]         ← HITL 1  : Validation RH shortlist [TODO]
+  [hitl_hr_validation]         ← HITL 1  : Validation RH shortlist
       │
       ├─► (réanalyse) ─────────────────────────────────► [cv_screener_node]
       │
       ▼
-  [interview_generator_node]   ← Agent 3 : Génération entretiens   [TODO]
+  [interview_generator_node]   ← Agent 3 : Génération entretiens
       │
       ▼
-  [interview_analyzer_node]    ← Agent 4 : Analyse entretiens      [TODO]
+  [interview_analyzer_node]    ← Agent 4 : Analyse entretiens
       │
       ▼
-  [hitl_manager_validation]    ← HITL 2  : Décision managériale    [TODO]
+  [hitl_manager_validation]    ← HITL 2  : Décision managériale
       │
       ├─► (entretien suppl.) ──────────────────────────► [interview_generator_node]
       │
       ▼
-  [report_generator_node]      ← Agent 5 : Rapport final RH        [TODO]
+  [report_generator_node]      ← Agent 5 : Rapport final RH
       │
       ▼
     END
@@ -66,12 +66,12 @@ logger = logging.getLogger(__name__)
 # Centraliser les noms évite les fautes de frappe dans add_edge / add_node.
 
 NODE_JOB_ANALYZER = "job_analyzer"
-NODE_CV_SCREENER = "cv_screener"  # Agent 2  [TODO]
-NODE_HITL_HR = "hitl_hr_validation"  # HITL 1   [TODO]
-NODE_INTERVIEW_GENERATOR = "interview_generator"  # Agent 3  [TODO]
-NODE_INTERVIEW_ANALYZER = "interview_analyzer"  # Agent 4  [TODO]
-NODE_HITL_MANAGER = "hitl_manager_validation"  # HITL 2   [TODO]
-NODE_REPORT_GENERATOR = "report_generator"  # Agent 5  [TODO]
+NODE_CV_SCREENER = "cv_screener"
+NODE_HITL_HR = "hitl_hr_validation"
+NODE_INTERVIEW_GENERATOR = "interview_generator"
+NODE_INTERVIEW_ANALYZER = "interview_analyzer"
+NODE_HITL_MANAGER = "hitl_manager_validation"
+NODE_REPORT_GENERATOR = "report_generator"
 
 
 # ─────────────────────────────────────────────
@@ -282,8 +282,9 @@ def build_recruitment_graph() -> StateGraph:
 
     compiled_graph = graph.compile(
         checkpointer=checkpointer,
-        # Points d'interruption HITL — le graphe se suspend ici
-        # et attend une reprise explicite via graph.invoke(None, config).
+        # Après l'Agent 1 : pause jusqu'à upload des CVs (POST /upload-cvs).
+        interrupt_after=[NODE_JOB_ANALYZER],
+        # HITL : suspension avant validation humaine, reprise via API.
         interrupt_before=[NODE_HITL_HR, NODE_HITL_MANAGER],
     )
 
