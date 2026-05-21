@@ -282,8 +282,8 @@ def build_recruitment_graph() -> StateGraph:
 
     compiled_graph = graph.compile(
         checkpointer=checkpointer,
-        # Après l'Agent 1 : pause jusqu'à upload des CVs (POST /upload-cvs).
-        interrupt_after=[NODE_JOB_ANALYZER],
+        # Pauses métier : upload CVs puis saisie des réponses d'entretien.
+        interrupt_after=[NODE_JOB_ANALYZER, NODE_INTERVIEW_GENERATOR],
         # HITL : suspension avant validation humaine, reprise via API.
         interrupt_before=[NODE_HITL_HR, NODE_HITL_MANAGER],
     )

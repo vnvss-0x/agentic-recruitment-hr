@@ -8,6 +8,7 @@ from typing import Dict
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.agents.interview_analyzer import interview_analyzer_node
 from app.api.events import dispatch_state_events
 from app.api.pipeline import run_pipeline
 from app.api.state_serializers import (
@@ -63,6 +64,7 @@ class SessionResponse(BaseModel):
 	has_interview_responses: bool = False
 	has_final_report: bool = False
 	awaiting_hitl_hr: bool = False
+	awaiting_interview_responses: bool = False
 	awaiting_hitl_manager: bool = False
 	activity_log: list[str] = Field(default_factory=list)
 	errors: list[dict] = Field(default_factory=list)
@@ -196,8 +198,20 @@ async def submit_interview_responses(
 		"current_step": PipelineStep.INTERVIEW_RESPONSES_DONE,
 	}
 
+	# Session déjà passée par l'Agent 4 sans réponses (ancien graphe) : ré-analyse seule.
+	prev_step = prev_state.get("current_step")
+	reanalyze_only = prev_step in (
+		PipelineStep.INTERVIEW_ANALYSIS_DONE,
+		PipelineStep.HITL_2_PENDING,
+	)
+
 	try:
-		new_state = run_pipeline(session_id, prev_state, update)
+		if reanalyze_only:
+			merged: RecruitmentState = {**prev_state, **update}
+			analyzer_delta = interview_analyzer_node(merged)
+			new_state = {**merged, **analyzer_delta}
+		else:
+			new_state = run_pipeline(session_id, prev_state, update)
 	except Exception as exc:
 		raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 

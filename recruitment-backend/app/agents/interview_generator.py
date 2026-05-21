@@ -185,7 +185,7 @@ def interview_generator_node(state: RecruitmentState) -> dict:
 	)
 
 	return {
-		"current_step": PipelineStep.INTERVIEW_GENERATION_DONE,
+		"current_step": PipelineStep.INTERVIEW_RESPONSES_PENDING,
 		"interview_questions": questions,
 		"errors": errors,
 		"prompt_metrics": prompt_metrics,

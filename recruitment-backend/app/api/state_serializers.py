@@ -35,10 +35,18 @@ def serialize_session_summary(state: RecruitmentState) -> dict[str, Any]:
 		PipelineStep.CV_SCREENING_DONE,
 	) or step_str == PipelineStep.HITL_1_PENDING.value
 
-	awaiting_hitl_manager = current in (
-		PipelineStep.HITL_2_PENDING,
-		PipelineStep.INTERVIEW_ANALYSIS_DONE,
-	) or step_str == PipelineStep.HITL_2_PENDING.value
+	awaiting_interview_responses = current in (
+		PipelineStep.INTERVIEW_RESPONSES_PENDING,
+		PipelineStep.INTERVIEW_GENERATION_DONE,
+	) or step_str == PipelineStep.INTERVIEW_RESPONSES_PENDING.value
+
+	awaiting_hitl_manager = (
+		current in (
+			PipelineStep.HITL_2_PENDING,
+			PipelineStep.INTERVIEW_ANALYSIS_DONE,
+		)
+		or step_str == PipelineStep.HITL_2_PENDING.value
+	) and not awaiting_interview_responses
 
 	job_profile = state.get("job_profile")
 	interview_questions = state.get("interview_questions") or {}
@@ -56,6 +64,7 @@ def serialize_session_summary(state: RecruitmentState) -> dict[str, Any]:
 		"has_interview_responses": bool(state.get("interview_responses")),
 		"has_final_report": state.get("final_report") is not None,
 		"awaiting_hitl_hr": awaiting_hitl_hr,
+		"awaiting_interview_responses": awaiting_interview_responses,
 		"awaiting_hitl_manager": awaiting_hitl_manager,
 		"activity_log": state.get("activity_log") or [],
 		"errors": model_to_json(state.get("errors") or []),
