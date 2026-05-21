@@ -5,3 +5,6 @@ __pycache__/
 data/uploads/
 data/chroma_db/
 .pytest_cache/
+frontend/node_modules/
+frontend/dist/
+test_manual/

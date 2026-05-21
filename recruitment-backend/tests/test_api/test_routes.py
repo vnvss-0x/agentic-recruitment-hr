@@ -63,6 +63,36 @@ def test_get_interview_questions():
 	assert data["candidates"]["cand-1"]["questions"]["technical"][0]["question_id"] == "cand-1-tech-1"
 
 
+def test_get_prompt_metrics():
+    client = TestClient(app)
+    state = initial_state_for_tests("sess-m")
+    state["prompt_metrics"] = {
+        "CVScreener": [
+            {
+                "quality_score": 1.0,
+                "coherence_score": 0.5,
+                "stability_score": 1.0,
+                "latency_ms": 123.4,
+            },
+            {
+                "quality_score": 0.0,
+                "coherence_score": 1.0,
+                "stability_score": 0.5,
+                "latency_ms": 76.6,
+            },
+        ],
+    }
+    session_manager.create("sess-m", state)
+
+    r = client.get("/v1/recruitment/sess-m/metrics")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["session_id"] == "sess-m"
+    assert data["prompt_metrics"]["CVScreener"][0]["latency_ms"] == 123.4
+    assert data["prompt_report"]["CVScreener"]["count"] == 2
+    assert data["prompt_report"]["CVScreener"]["avg_latency_ms"] == round((123.4 + 76.6) / 2, 2)
+
+
 def test_get_shortlist_empty():
     client = TestClient(app)
     # create a session with no candidates
