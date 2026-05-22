@@ -1,3 +1,5 @@
 s.ps1
 venv
 .venv
+node_modules/
+dist/
